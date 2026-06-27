@@ -96,7 +96,7 @@
 <div class="wrap" id="wrap"><div id="app"></div></div>
 
 <script>
-const KVDB_BASE = "https://kvdb.io";
+const GAS_URL = "ここにGoogle Apps ScriptのウェブアプリURLを貼ってください"; // 例: https://script.google.com/macros/s/XXXXXXXX/exec
 const params = new URLSearchParams(location.search);
 const bucket = params.get("b");
 const role = params.get("role");
@@ -139,15 +139,14 @@ function buildUrl(role){
   if(role) u.searchParams.set("role", role);
   return u.toString();
 }
-function kvGet(key){
-  return fetch(`${KVDB_BASE}/${bucket}/${key}`).then(r=>{
-    if(r.status===404) return null;
-    if(!r.ok) throw new Error("read failed");
+function kvGet(id, key){
+  return fetch(`${GAS_URL}?id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`).then(r=>{
+    if(!r.ok) throw new Error("read failed (" + r.status + ")");
     return r.text();
-  });
+  }).then(t => t === "" ? null : t);
 }
-function kvSet(key, value){
-  return fetch(`${KVDB_BASE}/${bucket}/${key}`, {method:"POST", body:value}).then(r=>{
+function kvSet(id, key, value){
+  return fetch(`${GAS_URL}?id=${encodeURIComponent(id)}&key=${encodeURIComponent(key)}`, {method:"POST", body:value}).then(r=>{
     if(!r.ok) throw new Error("write failed (" + r.status + ")");
     return r;
   });
@@ -160,36 +159,23 @@ function renderSetup(){
   app.innerHTML = `
     <div class="card">
       <h1>フロア呼び出しボード - 新規作成</h1>
-      <div class="label">作成者のメールアドレス(任意)</div>
-      <input type="email" id="email" placeholder="example@example.com" value="jianrenxiaoze35@gmail.com">
       <button class="block" id="createBtn">この店舗用に新しい呼び出し表を作成</button>
       <div class="err" id="err" style="display:none"></div>
     </div>
   `;
   document.getElementById("createBtn").onclick = async ()=>{
-    const email = document.getElementById("email").value.trim();
     const errEl = document.getElementById("err");
     errEl.style.display = "none";
     try{
-      const body = email ? `email=${encodeURIComponent(email)}` : "";
-      const res = await fetch(KVDB_BASE + "/", {
-        method:"POST",
-        headers:{"Content-Type":"application/x-www-form-urlencoded"},
-        body
-      });
-      if(!res.ok) throw new Error("作成に失敗しました (" + res.status + ")");
-      const id = (await res.text()).trim();
-      await fetch(`${KVDB_BASE}/${id}/state`, {
-        method:"POST",
-        body: JSON.stringify({items: DEFAULT_ITEMS, assignments: {}, updatedAt: Date.now()})
-      });
+      const id = uid() + uid();
+      await kvSet(id, "state", JSON.stringify({items: DEFAULT_ITEMS, assignments: {}, updatedAt: Date.now()}));
       const u = new URL(location.href);
       u.search = "";
       u.searchParams.set("b", id);
       u.searchParams.set("new", "1");
       location.href = u.toString();
     }catch(e){
-      errEl.textContent = "作成に失敗しました。通信環境を確認して再度お試しください。";
+      errEl.textContent = "作成に失敗しました: " + e.message;
       errEl.style.display = "block";
     }
   };
@@ -213,7 +199,7 @@ function renderLinks(){
       </div>
       <button class="block" id="goStaff">スタッフ画面を開く</button>
       <button class="secondary block" id="goDisplay" style="margin-top:10px;">表示画面を開く</button>
-      <div class="status">データは無料プランのため約3ヶ月で自動的に有効期限が切れます。</div>
+      <div class="status">データはGoogle Apps Scriptのプロパティに保存されます。自動的な期限切れはありません。</div>
     </div>
   `;
   document.getElementById("goStaff").onclick = ()=> location.href = staffUrl;
@@ -451,7 +437,7 @@ function renderStaff(){
     state.updatedAt = Date.now();
     saveStatus.textContent = "保存中...";
     try{
-      await kvSet("state", JSON.stringify(state));
+      await kvSet(bucket, "state", JSON.stringify(state));
       saveStatus.textContent = "保存しました " + new Date().toLocaleTimeString("ja-JP");
     }catch(e){
       saveStatus.textContent = "保存に失敗しました: " + e.message;
@@ -467,7 +453,7 @@ function renderStaff(){
   async function poll(){
     if(isBusy()) return;
     try{
-      const s = await kvGet("state");
+      const s = await kvGet(bucket, "state");
       if(s){
         const remote = JSON.parse(s);
         // only adopt remote if it is strictly newer than our local copy,
@@ -503,7 +489,7 @@ function renderDisplay(){
 
   async function poll(){
     try{
-      const s = await kvGet("state");
+      const s = await kvGet(bucket, "state");
       if(!s){ statusEl.textContent = "まだ設定されていません"; return; }
       state = JSON.parse(s);
       draw();
