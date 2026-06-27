@@ -281,6 +281,7 @@ function startDrag(e, el, state, itemRef, floorEl, opts){
   const startX = e.clientX, startY = e.clientY;
   const startLeft = item.x, startTop = item.y;
   el.setPointerCapture(e.pointerId);
+  if(opts.onDragStart) opts.onDragStart();
   function onMove(ev){
     const dx = (ev.clientX - startX) / rect.width * 100;
     const dy = (ev.clientY - startY) / rect.height * 100;
@@ -293,6 +294,7 @@ function startDrag(e, el, state, itemRef, floorEl, opts){
     el.releasePointerCapture(ev.pointerId);
     el.removeEventListener("pointermove", onMove);
     el.removeEventListener("pointerup", onUp);
+    if(opts.onDragEnd) opts.onDragEnd();
     opts.onChange();
   }
   el.addEventListener("pointermove", onMove);
@@ -350,6 +352,8 @@ function renderStaff(){
     renderFloorItems(floor, state, {
       editable: mode === "edit",
       onTap: mode === "call" ? openAssignModal : null,
+      onDragStart: ()=>{ dragging = true; },
+      onDragEnd: ()=>{ dragging = false; },
       onChange: ()=>{ draw(); save(); }
     });
   }
@@ -450,8 +454,9 @@ function renderStaff(){
     saving = false;
   }
 
+  let dragging = false;
   function isBusy(){
-    return modalRoot.children.length > 0 || document.activeElement?.tagName === "INPUT";
+    return modalRoot.children.length > 0 || document.activeElement?.tagName === "INPUT" || dragging;
   }
 
   async function poll(){
@@ -460,7 +465,9 @@ function renderStaff(){
       const s = await kvGet("state");
       if(s){
         const remote = JSON.parse(s);
-        if(remote.updatedAt !== state.updatedAt){
+        // only adopt remote if it is strictly newer than our local copy,
+        // so an in-flight poll can never clobber an edit we just made (or are mid-saving)
+        if(remote.updatedAt > state.updatedAt){
           state = remote;
           draw();
         }
