@@ -332,6 +332,7 @@ function renderStaff(){
           <button id="modeCall" class="active">番号呼び出し</button>
           <button id="modeEdit">レイアウト編集</button>
         </div>
+        <button id="manualSave" class="secondary">保存</button>
       </div>
       <div class="edit-toolbar" id="editToolbar" style="display:none;">
         <button id="addTable">+ テーブル追加</button>
@@ -439,9 +440,10 @@ function renderStaff(){
     state.items.push({id:"c"+uid(), type:"counter", label:"カウンター", x:30, y:40, w:50, h:12});
     draw(); save();
   };
+  document.getElementById("manualSave").onclick = ()=> save(true);
 
-  async function save(){
-    if(saving) return;
+  async function save(force){
+    if(saving && !force) return;
     saving = true;
     state.updatedAt = Date.now();
     saveStatus.textContent = "保存中...";
