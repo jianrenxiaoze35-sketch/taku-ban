@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>フロア呼び出しボード</title>
+<style>
+  :root{
+    --bg:#0f172a;
+    --card:#1e293b;
+    --accent:#f97316;
+    --text:#f8fafc;
+    --muted:#94a3b8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Sans","Yu Gothic",system-ui,-apple-system,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    padding:16px;
+  }
+  .wrap{width:100%;max-width:1100px;margin:0 auto;}
+  .wrap.narrow{max-width:480px;}
+  .card{
+    background:var(--card);
+    border-radius:20px;
+    padding:24px 20px;
+    box-shadow:0 10px 40px rgba(0,0,0,.4);
+  }
+  h1{font-size:18px;margin:0 0 16px;color:var(--muted);font-weight:500;text-align:center;letter-spacing:.05em;}
+  .label{text-align:center;color:var(--muted);font-size:13px;margin-bottom:4px;}
+  input[type=text],input[type=email]{
+    width:100%;padding:14px;font-size:22px;border-radius:12px;border:none;
+    background:#0b1220;color:var(--text);text-align:center;margin-bottom:14px;
+    outline:2px solid #334155;
+  }
+  input[type=email]{font-size:16px;text-align:left;}
+  button{
+    padding:14px 16px;font-size:16px;font-weight:700;border:none;
+    border-radius:12px;background:var(--accent);color:#0f172a;cursor:pointer;
+  }
+  button:active{transform:scale(.98);}
+  button.secondary{background:#334155;color:var(--text);}
+  button.block{width:100%;}
+  .links{margin-top:18px;font-size:13px;color:var(--muted);word-break:break-all;line-height:1.7;}
+  .links b{color:var(--text);}
+  .links .url{background:#0b1220;padding:8px;border-radius:8px;display:block;margin:4px 0 14px;}
+  .copybtn{background:#334155;color:var(--text);font-size:13px;padding:8px 12px;}
+  .status{text-align:center;font-size:12px;color:var(--muted);margin-top:14px;}
+  .err{color:#f87171;text-align:center;font-size:14px;margin-top:10px;}
+
+  .toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;justify-content:center;}
+  .toolbar .modegroup{display:flex;background:#0b1220;border-radius:12px;padding:4px;gap:4px;}
+  .toolbar .modegroup button{background:transparent;color:var(--muted);padding:10px 14px;font-size:14px;}
+  .toolbar .modegroup button.active{background:var(--accent);color:#0f172a;}
+
+  .floor{position:relative;width:100%;aspect-ratio:7/5;background:#0b1220;border-radius:16px;overflow:hidden;touch-action:none;border:1px solid #334155;}
+  .fitem{position:absolute;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;user-select:none;text-align:center;overflow:hidden;}
+  .fitem.table{background:#334155;cursor:pointer;}
+  .fitem.sofa{background:#3f2d52;color:#e9d8fd;}
+  .fitem.counter{background:#1e3a4c;color:#bae6fd;border:1px solid #38597a;}
+  .fitem .tlabel{font-size:11px;color:var(--muted);position:absolute;top:4px;left:6px;}
+  .fitem .tcode{font-size:clamp(14px,4vw,26px);font-weight:800;color:var(--accent);}
+  .fitem .tcode.empty{color:#64748b;font-size:13px;font-weight:500;}
+  .fitem .flabel{font-size:clamp(11px,2.4vw,15px);font-weight:600;}
+  .fitem .ctrl{position:absolute;width:20px;height:20px;border-radius:50%;background:#0b1220;border:1px solid #475569;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;color:var(--text);}
+  .fitem .ctrl.del{top:-8px;right:-8px;}
+  .fitem .ctrl.rot{top:-8px;left:-8px;}
+  .edit-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;justify-content:center;}
+  .edit-toolbar button{font-size:13px;padding:10px 12px;}
+
+  .overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
+    align-items:center;justify-content:center;padding:16px;z-index:50;
+  }
+  .modal{
+    background:var(--card);border-radius:18px;padding:20px;max-width:420px;width:100%;
+    max-height:85vh;overflow:auto;
+  }
+  .modal h2{font-size:16px;color:var(--text);margin:0 0 4px;text-align:center;}
+  .modal .sub{font-size:12px;color:var(--muted);text-align:center;margin-bottom:14px;}
+  .codegroup{margin-bottom:14px;}
+  .codegroup .gname{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:700;}
+  .codegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+  .codegrid button{padding:10px 0;font-size:14px;background:#334155;color:var(--text);}
+  .codegrid button.selected{background:var(--accent);color:#0f172a;}
+  .modalbtns{display:flex;gap:8px;margin-top:10px;}
+  .modalbtns button{flex:1;}
+  .editrow{display:flex;gap:8px;margin-top:10px;}
+  .editrow input{margin:0;padding:10px;font-size:15px;}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><div id="app"></div></div>
+
+<script>
+const KVDB_BASE = "https://kvdb.io";
+const params = new URLSearchParams(location.search);
+const bucket = params.get("b");
+const role = params.get("role");
+const app = document.getElementById("app");
+const wrapEl = document.getElementById("wrap");
+
+const GROUPS = { N: 10, C: 10, T: 10 };
+function allCodes(){
+  const codes = [];
+  Object.keys(GROUPS).forEach(g => { for(let i=1;i<=GROUPS[g];i++) codes.push(g+i); });
+  return codes;
+}
+
+const DEFAULT_ITEMS = [
+  {"id":"sofa1","type":"sofa","label":"ソファー","x":16.24,"y":0,"w":68,"h":10},
+  {"id":"tableS0","type":"table","label":"1","x":4,"y":13,"w":7,"h":14},
+  {"id":"tableS1","type":"table","label":"2","x":16.14,"y":13,"w":7,"h":14},
+  {"id":"tableS2","type":"table","label":"3","x":28.29,"y":13,"w":7,"h":14},
+  {"id":"tableS3","type":"table","label":"4","x":40.43,"y":13,"w":7,"h":14},
+  {"id":"tableS4","type":"table","label":"5","x":52.57,"y":13,"w":7,"h":14},
+  {"id":"tableS5","type":"table","label":"6","x":64.71,"y":13,"w":7,"h":14},
+  {"id":"tableS6","type":"table","label":"7","x":76.86,"y":13,"w":7,"h":14},
+  {"id":"tableS7","type":"table","label":"8","x":89,"y":13,"w":7,"h":14},
+  {"id":"tableC0","type":"table","label":"9","x":15.83,"y":30.67,"w":7,"h":14},
+  {"id":"tableC1","type":"table","label":"10","x":46.5,"y":30.67,"w":7,"h":14},
+  {"id":"tableC2","type":"table","label":"11","x":77.17,"y":30.67,"w":7,"h":14},
+  {"id":"tableC3","type":"table","label":"12","x":15.83,"y":46,"w":7,"h":14},
+  {"id":"tableC4","type":"table","label":"13","x":46.5,"y":46,"w":7,"h":14},
+  {"id":"tableC5","type":"table","label":"14","x":77.17,"y":46,"w":7,"h":14},
+  {"id":"tableC6","type":"table","label":"15","x":15.83,"y":61.33,"w":7,"h":14},
+  {"id":"tableC7","type":"table","label":"16","x":46.5,"y":61.33,"w":7,"h":14},
+  {"id":"tableC8","type":"table","label":"17","x":77.17,"y":61.33,"w":7,"h":14},
+  {"id":"counter1","type":"counter","label":"カウンター(入口側)","x":4,"y":80,"w":92,"h":14}
+];
+
+function buildUrl(role){
+  const u = new URL(location.href);
+  u.search = "";
+  u.searchParams.set("b", bucket);
+  if(role) u.searchParams.set("role", role);
+  return u.toString();
+}
+function kvGet(key){
+  return fetch(`${KVDB_BASE}/${bucket}/${key}`).then(r=>{
+    if(r.status===404) return null;
+    if(!r.ok) throw new Error("read failed");
+    return r.text();
+  });
+}
+function kvSet(key, value){
+  return fetch(`${KVDB_BASE}/${bucket}/${key}`, {method:"POST", body:value});
+}
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function renderSetup(){
+  wrapEl.classList.add("narrow");
+  app.innerHTML = `
+    <div class="card">
+      <h1>フロア呼び出しボード - 新規作成</h1>
+      <div class="label">作成者のメールアドレス(任意)</div>
+      <input type="email" id="email" placeholder="example@example.com" value="jianrenxiaoze35@gmail.com">
+      <button class="block" id="createBtn">この店舗用に新しい呼び出し表を作成</button>
+      <div class="err" id="err" style="display:none"></div>
+    </div>
+  `;
+  document.getElementById("createBtn").onclick = async ()=>{
+    const email = document.getElementById("email").value.trim();
+    const errEl = document.getElementById("err");
+    errEl.style.display = "none";
+    try{
+      const body = email ? `email=${encodeURIComponent(email)}` : "";
+      const res = await fetch(KVDB_BASE + "/", {
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body
+      });
+      if(!res.ok) throw new Error("作成に失敗しました (" + res.status + ")");
+      const id = (await res.text()).trim();
+      await fetch(`${KVDB_BASE}/${id}/state`, {
+        method:"POST",
+        body: JSON.stringify({items: DEFAULT_ITEMS, assignments: {}, updatedAt: Date.now()})
+      });
+      const u = new URL(location.href);
+      u.search = "";
+      u.searchParams.set("b", id);
+      u.searchParams.set("new", "1");
+      location.href = u.toString();
+    }catch(e){
+      errEl.textContent = "作成に失敗しました。通信環境を確認して再度お試しください。";
+      errEl.style.display = "block";
+    }
+  };
+}
+
+function renderLinks(){
+  wrapEl.classList.add("narrow");
+  const staffUrl = buildUrl("staff");
+  const displayUrl = buildUrl();
+  app.innerHTML = `
+    <div class="card">
+      <h1>作成完了</h1>
+      <div class="links">
+        <b>① お客様・フロア表示用</b>
+        <span class="url">${displayUrl}</span>
+        <button class="copybtn" onclick="navigator.clipboard.writeText('${displayUrl}')">コピー</button>
+        <br>
+        <b>② スタッフ用(番号を割り当てる)</b>
+        <span class="url">${staffUrl}</span>
+        <button class="copybtn" onclick="navigator.clipboard.writeText('${staffUrl}')">コピー</button>
+      </div>
+      <button class="block" id="goStaff">スタッフ画面を開く</button>
+      <button class="secondary block" id="goDisplay" style="margin-top:10px;">表示画面を開く</button>
+      <div class="status">データは無料プランのため約3ヶ月で自動的に有効期限が切れます。</div>
+    </div>
+  `;
+  document.getElementById("goStaff").onclick = ()=> location.href = staffUrl;
+  document.getElementById("goDisplay").onclick = ()=> location.href = displayUrl;
+}
+
+function renderFloorItems(floorEl, state, opts){
+  // opts: {editable, onTap, onChange}
+  floorEl.innerHTML = "";
+  state.items.forEach(item=>{
+    const el = document.createElement("div");
+    el.className = "fitem " + item.type;
+    el.style.left = item.x + "%";
+    el.style.top = item.y + "%";
+    el.style.width = item.w + "%";
+    el.style.height = item.h + "%";
+    el.dataset.id = item.id;
+
+    if(item.type === "table"){
+      const code = state.assignments[item.id];
+      el.innerHTML = `
+        <span class="tlabel">${item.label}</span>
+        <span class="tcode ${code ? "" : "empty"}">${code || "-"}</span>
+      `;
+    }else{
+      el.innerHTML = `<span class="flabel">${item.label}</span>`;
+    }
+
+    if(opts.editable){
+      const rot = document.createElement("div");
+      rot.className = "ctrl rot";
+      rot.textContent = "⟲";
+      rot.onpointerdown = (e)=>{
+        e.stopPropagation();
+        const it = state.items.find(i=>i.id===item.id);
+        const cx = it.x + it.w/2, cy = it.y + it.h/2;
+        const nw = it.h, nh = it.w;
+        it.w = nw; it.h = nh;
+        it.x = clamp(cx - nw/2, 0, 100-nw);
+        it.y = clamp(cy - nh/2, 0, 100-nh);
+        opts.onChange();
+      };
+      el.appendChild(rot);
+
+      const del = document.createElement("div");
+      del.className = "ctrl del";
+      del.textContent = "×";
+      del.onpointerdown = (e)=>{
+        e.stopPropagation();
+        state.items = state.items.filter(i=>i.id!==item.id);
+        opts.onChange();
+      };
+      el.appendChild(del);
+
+      el.addEventListener("pointerdown", (e)=> startDrag(e, el, state, item, floorEl, opts));
+    }else if(opts.onTap && item.type === "table"){
+      el.addEventListener("pointerdown", (e)=> startTapOrDrag(e, el, state, item, floorEl, opts));
+    }
+
+    floorEl.appendChild(el);
+  });
+}
+
+function startDrag(e, el, state, itemRef, floorEl, opts){
+  const item = state.items.find(i=>i.id===itemRef.id);
+  if(!item) return;
+  const rect = floorEl.getBoundingClientRect();
+  const startX = e.clientX, startY = e.clientY;
+  const startLeft = item.x, startTop = item.y;
+  el.setPointerCapture(e.pointerId);
+  function onMove(ev){
+    const dx = (ev.clientX - startX) / rect.width * 100;
+    const dy = (ev.clientY - startY) / rect.height * 100;
+    item.x = clamp(startLeft + dx, 0, 100 - item.w);
+    item.y = clamp(startTop + dy, 0, 100 - item.h);
+    el.style.left = item.x + "%";
+    el.style.top = item.y + "%";
+  }
+  function onUp(ev){
+    el.releasePointerCapture(ev.pointerId);
+    el.removeEventListener("pointermove", onMove);
+    el.removeEventListener("pointerup", onUp);
+    opts.onChange();
+  }
+  el.addEventListener("pointermove", onMove);
+  el.addEventListener("pointerup", onUp);
+}
+
+function startTapOrDrag(e, el, state, itemRef, floorEl, opts){
+  const startX = e.clientX, startY = e.clientY;
+  let moved = false;
+  el.setPointerCapture(e.pointerId);
+  function onMove(ev){
+    if(Math.abs(ev.clientX-startX) > 6 || Math.abs(ev.clientY-startY) > 6) moved = true;
+  }
+  function onUp(ev){
+    el.releasePointerCapture(ev.pointerId);
+    el.removeEventListener("pointermove", onMove);
+    el.removeEventListener("pointerup", onUp);
+    if(!moved) opts.onTap(itemRef.id);
+  }
+  el.addEventListener("pointermove", onMove);
+  el.addEventListener("pointerup", onUp);
+}
+
+function renderStaff(){
+  wrapEl.classList.remove("narrow");
+  let state = {items: DEFAULT_ITEMS.map(i=>({...i})), assignments:{}, updatedAt:0};
+  let mode = "call"; // "call" | "edit"
+  let saving = false;
+
+  app.innerHTML = `
+    <div class="card">
+      <h1>スタッフ用 - フロア番号呼び出し</h1>
+      <div class="toolbar">
+        <div class="modegroup">
+          <button id="modeCall" class="active">番号呼び出し</button>
+          <button id="modeEdit">レイアウト編集</button>
+        </div>
+      </div>
+      <div class="edit-toolbar" id="editToolbar" style="display:none;">
+        <button id="addTable">+ テーブル追加</button>
+        <button id="addSofa">+ ソファー追加</button>
+        <button id="addCounter">+ カウンター追加</button>
+      </div>
+      <div class="floor" id="floor"></div>
+      <div class="status" id="saveStatus"></div>
+    </div>
+    <div id="modalRoot"></div>
+  `;
+  const floor = document.getElementById("floor");
+  const saveStatus = document.getElementById("saveStatus");
+  const editToolbar = document.getElementById("editToolbar");
+  const modalRoot = document.getElementById("modalRoot");
+
+  function draw(){
+    renderFloorItems(floor, state, {
+      editable: mode === "edit",
+      onTap: mode === "call" ? openAssignModal : null,
+      onChange: ()=>{ draw(); save(); }
+    });
+  }
+
+  function openAssignModal(itemId){
+    const item = state.items.find(i=>i.id===itemId);
+    if(!item) return;
+    const current = state.assignments[itemId] || "";
+    modalRoot.innerHTML = `
+      <div class="overlay" id="overlay">
+        <div class="modal">
+          <h2>テーブル ${item.label}</h2>
+          <div class="sub">割り当てる番号を選んでください</div>
+          ${Object.keys(GROUPS).map(g => `
+            <div class="codegroup">
+              <div class="gname">${g}グループ</div>
+              <div class="codegrid">
+                ${Array.from({length:GROUPS[g]},(_,i)=>{
+                  const code = g+(i+1);
+                  return `<button data-code="${code}" class="${code===current?"selected":""}">${code}</button>`;
+                }).join("")}
+              </div>
+            </div>
+          `).join("")}
+          <div class="modalbtns">
+            <button class="secondary" id="clearBtn">クリア</button>
+            <button class="secondary" id="closeBtn">閉じる</button>
+          </div>
+          <div class="editrow">
+            <input type="text" id="renameInput" value="${item.label}" placeholder="テーブル名">
+            <button class="secondary" id="renameBtn">名前変更</button>
+          </div>
+        </div>
+      </div>
+    `;
+    modalRoot.querySelectorAll(".codegrid button").forEach(b=>{
+      b.onclick = ()=>{
+        state.assignments[itemId] = b.dataset.code;
+        closeModal();
+        draw(); save();
+      };
+    });
+    document.getElementById("clearBtn").onclick = ()=>{
+      delete state.assignments[itemId];
+      closeModal();
+      draw(); save();
+    };
+    document.getElementById("closeBtn").onclick = closeModal;
+    document.getElementById("renameBtn").onclick = ()=>{
+      const v = document.getElementById("renameInput").value.trim();
+      if(v) item.label = v;
+      closeModal();
+      draw(); save();
+    };
+    document.getElementById("overlay").onclick = (e)=>{ if(e.target.id==="overlay") closeModal(); };
+  }
+  function closeModal(){ modalRoot.innerHTML = ""; }
+
+  document.getElementById("modeCall").onclick = ()=>{
+    mode = "call";
+    document.getElementById("modeCall").classList.add("active");
+    document.getElementById("modeEdit").classList.remove("active");
+    editToolbar.style.display = "none";
+    draw();
+  };
+  document.getElementById("modeEdit").onclick = ()=>{
+    mode = "edit";
+    document.getElementById("modeEdit").classList.add("active");
+    document.getElementById("modeCall").classList.remove("active");
+    editToolbar.style.display = "flex";
+    draw();
+  };
+  document.getElementById("addTable").onclick = ()=>{
+    const n = state.items.filter(i=>i.type==="table").length + 1;
+    state.items.push({id:"t"+uid(), type:"table", label:String(n), x:40, y:40, w:14, h:14});
+    draw(); save();
+  };
+  document.getElementById("addSofa").onclick = ()=>{
+    state.items.push({id:"s"+uid(), type:"sofa", label:"ソファー", x:40, y:40, w:20, h:10});
+    draw(); save();
+  };
+  document.getElementById("addCounter").onclick = ()=>{
+    state.items.push({id:"c"+uid(), type:"counter", label:"カウンター", x:30, y:40, w:50, h:12});
+    draw(); save();
+  };
+
+  async function save(){
+    if(saving) return;
+    saving = true;
+    state.updatedAt = Date.now();
+    saveStatus.textContent = "保存中...";
+    try{
+      await kvSet("state", JSON.stringify(state));
+      saveStatus.textContent = "保存しました " + new Date().toLocaleTimeString("ja-JP");
+    }catch(e){
+      saveStatus.textContent = "保存に失敗しました。通信環境を確認してください。";
+    }
+    saving = false;
+  }
+
+  function isBusy(){
+    return modalRoot.children.length > 0 || document.activeElement?.tagName === "INPUT";
+  }
+
+  async function poll(){
+    if(isBusy()) return;
+    try{
+      const s = await kvGet("state");
+      if(s){
+        const remote = JSON.parse(s);
+        if(remote.updatedAt !== state.updatedAt){
+          state = remote;
+          draw();
+        }
+      }
+    }catch(e){}
+  }
+  draw();
+  poll();
+  setInterval(poll, 2000);
+}
+
+function renderDisplay(){
+  wrapEl.classList.remove("narrow");
+  let state = {items: DEFAULT_ITEMS, assignments:{}, updatedAt:0};
+  app.innerHTML = `
+    <div class="card">
+      <h1>フロア呼び出し番号</h1>
+      <div class="floor" id="floor"></div>
+      <div class="status" id="status">読み込み中...</div>
+    </div>
+  `;
+  const floor = document.getElementById("floor");
+  const statusEl = document.getElementById("status");
+
+  function draw(){
+    renderFloorItems(floor, state, {editable:false, onTap:null, onChange:()=>{}});
+  }
+
+  async function poll(){
+    try{
+      const s = await kvGet("state");
+      if(!s){ statusEl.textContent = "まだ設定されていません"; return; }
+      state = JSON.parse(s);
+      draw();
+      statusEl.textContent = "更新: " + new Date(state.updatedAt||Date.now()).toLocaleTimeString("ja-JP");
+    }catch(e){
+      statusEl.textContent = "通信エラー。再試行中...";
+    }
+  }
+  draw();
+  poll();
+  setInterval(poll, 1500);
+}
+
+if(!bucket){
+  renderSetup();
+}else if(params.get("new")==="1"){
+  renderLinks();
+}else if(role==="staff"){
+  renderStaff();
+}else{
+  renderDisplay();
+}
+</script>
+</body>
+</html>
